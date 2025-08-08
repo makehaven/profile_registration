@@ -1,0 +1,6 @@
+{
+    "name": "makehaven/profile_registration",
+    "type": "drupal-custom-module",
+    "description": "Alters the registration form to include profiles based on URL parameters.",
+    "license": "GPL-2.0-or-later"
+}

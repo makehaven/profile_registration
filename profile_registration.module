@@ -1,0 +1,52 @@
+<?php
+
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Url;
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ */
+function profile_registration_form_user_register_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  // Add a custom submit handler to the user registration form.
+  if ($form_id == 'user_register_form') {
+    $form['actions']['submit']['#submit'][] = 'profile_registration_user_register_form_submit';
+  }
+}
+
+/**
+ * Custom submit handler for the user registration form.
+ */
+function profile_registration_user_register_form_submit($form, FormStateInterface $form_state) {
+  $query = \Drupal::request()->query;
+  $profile_type = $query->get('profile');
+  $destination = $query->get('destination');
+
+  /** @var \Drupal\user\Entity\User $user */
+  $user = $form_state->getFormObject()->getEntity();
+
+  // Assign role if necessary.
+  if ($profile_type === 'main') {
+    $user->addRole('member_pending_approval');
+  }
+
+  // Save the user entity with any changes.
+  $user->save();
+
+  // Retrieve all query parameters.
+  $query_params = $query->all();
+
+  // Redirect logic: destination takes priority, then profile type, otherwise user account.
+  if ($destination) {
+    $redirect_url = Url::fromUserInput('/' . ltrim($destination, '/'), ['query' => $query_params]);
+  } elseif ($profile_type) {
+    $redirect_url = Url::fromUserInput('/user/' . $user->id() . '/' . $profile_type, ['query' => $query_params]);
+  } else {
+    $redirect_url = Url::fromUserInput('/user/' . $user->id(), ['query' => $query_params]);
+  }
+
+  // Set the redirect.
+  $form_state->setRedirectUrl($redirect_url);
+
+  // Display a message to guide the user.
+  \Drupal::messenger()->addStatus(t('Please continue by completing the profile.'));
+}

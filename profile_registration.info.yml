@@ -1,0 +1,7 @@
+name: 'Profile Registration'
+type: module
+description: 'Alters the registration form to include profiles based on URL parameters.'
+package: Custom
+core_version_requirement: ^10
+dependencies:
+  - drupal:profile
