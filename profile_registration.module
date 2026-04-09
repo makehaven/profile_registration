@@ -1,7 +1,42 @@
 <?php
 
+use Drupal\Core\Entity\ContentEntityFormInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Url;
+use Drupal\profile\Entity\ProfileInterface;
+
+/**
+ * Implements hook_form_alter().
+ *
+ * When a new main profile is created via a URL carrying ?membership_type=TID,
+ * silently apply that membership type and hide the field so the student never
+ * sees or accidentally changes it.
+ */
+function profile_registration_form_alter(array &$form, FormStateInterface $form_state, string $form_id): void {
+  $form_object = $form_state->getFormObject();
+  if (!$form_object instanceof ContentEntityFormInterface) {
+    return;
+  }
+  $entity = $form_object->getEntity();
+  if (!$entity instanceof ProfileInterface || $entity->bundle() !== 'main' || !$entity->isNew()) {
+    return;
+  }
+
+  $tid = (int) \Drupal::request()->query->get('membership_type');
+  if (!$tid) {
+    return;
+  }
+
+  // Apply directly to the entity so the value is saved regardless of widget.
+  if ($entity->hasField('field_membership_type')) {
+    $entity->set('field_membership_type', $tid);
+  }
+
+  // Hide the field — gateway members shouldn't be able to change their type.
+  if (isset($form['field_membership_type'])) {
+    $form['field_membership_type']['#access'] = FALSE;
+  }
+}
 
 /**
  * Implements hook_form_FORM_ID_alter().
