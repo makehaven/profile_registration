@@ -50,38 +50,51 @@ function profile_registration_form_user_register_form_alter(&$form, FormStateInt
 
 /**
  * Custom submit handler for the user registration form.
+ *
+ * Dispatches the post-registration flow based on the ?profile query param:
+ *  - profile=main       Paid/gateway member. Assign member_pending_approval and
+ *                       send to /user/{uid}/main to complete the profile.
+ *  - profile=instructor Instructor applicant. No role assigned (staff promote
+ *                       manually after agreement signing). Send to
+ *                       /become-instructor where the agreement webform lives.
+ *  - (none)             Public authenticated user (event attendee, course
+ *                       follower). No role, no profile. Honor ?destination= if
+ *                       present, otherwise land on the user account view.
+ *
+ * ?destination= always wins so a Chargebee-style URL or any other caller that
+ * explicitly sets a destination keeps working unchanged.
  */
 function profile_registration_user_register_form_submit($form, FormStateInterface $form_state) {
   $query = \Drupal::request()->query;
   $profile_type = $query->get('profile');
   $destination = $query->get('destination');
+  $query_params = $query->all();
 
   /** @var \Drupal\user\Entity\User $user */
   $user = $form_state->getFormObject()->getEntity();
 
-  // Assign role if necessary.
   if ($profile_type === 'main') {
     $user->addRole('member_pending_approval');
+    $user->save();
   }
 
-  // Save the user entity with any changes.
-  $user->save();
-
-  // Retrieve all query parameters.
-  $query_params = $query->all();
-
-  // Redirect logic: destination takes priority, then profile type, otherwise user account.
   if ($destination) {
     $redirect_url = Url::fromUserInput('/' . ltrim($destination, '/'), ['query' => $query_params]);
-  } elseif ($profile_type) {
-    $redirect_url = Url::fromUserInput('/user/' . $user->id() . '/' . $profile_type, ['query' => $query_params]);
-  } else {
+  }
+  elseif ($profile_type === 'main') {
+    $redirect_url = Url::fromUserInput('/user/' . $user->id() . '/main', ['query' => $query_params]);
+    \Drupal::messenger()->addStatus(t('Please continue by completing your member profile.'));
+  }
+  elseif ($profile_type === 'instructor') {
+    // Send fresh signups straight to the agreement webform, then back to the
+    // become-instructor status page after submission. Skips the marketing
+    // middle step they were on the same flow as already.
+    $query_params['destination'] = '/become-instructor';
+    $redirect_url = Url::fromUri('internal:/form/webform-5220', ['query' => $query_params]);
+  }
+  else {
     $redirect_url = Url::fromUserInput('/user/' . $user->id(), ['query' => $query_params]);
   }
 
-  // Set the redirect.
   $form_state->setRedirectUrl($redirect_url);
-
-  // Display a message to guide the user.
-  \Drupal::messenger()->addStatus(t('Please continue by completing the profile.'));
 }
