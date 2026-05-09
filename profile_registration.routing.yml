@@ -1,0 +1,7 @@
+profile_registration.settings:
+  path: '/admin/config/makerspace/profile-registration'
+  defaults:
+    _form: '\Drupal\profile_registration\Form\SettingsForm'
+    _title: 'Profile Registration'
+  requirements:
+    _permission: 'administer site configuration'

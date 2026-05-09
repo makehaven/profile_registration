@@ -1,7 +1,10 @@
 name: 'Profile Registration'
 type: module
-description: 'Alters the registration form to include profiles based on URL parameters.'
+description: 'Alters the registration form to include profiles based on URL parameters, and sends a configurable member-onboarding email when a member account is created.'
 package: Makerspace
 core_version_requirement: ^10 || ^11
+configure: profile_registration.settings
 dependencies:
   - drupal:profile
+  - drupal:user
+  - drupal:token

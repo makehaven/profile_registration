@@ -76,6 +76,7 @@ function profile_registration_user_register_form_submit($form, FormStateInterfac
   if ($profile_type === 'main') {
     $user->addRole('member_pending_approval');
     $user->save();
+    profile_registration_send_member_onboarding_email($user);
   }
 
   if ($destination) {
@@ -97,4 +98,47 @@ function profile_registration_user_register_form_submit($form, FormStateInterfac
   }
 
   $form_state->setRedirectUrl($redirect_url);
+}
+
+/**
+ * Sends the configurable member-onboarding email to a newly registered member.
+ *
+ * Default copy lives in profile_registration.settings (subject + body, with
+ * Drupal tokens). Admins can edit it at
+ * /admin/config/makerspace/profile-registration without a code deploy.
+ */
+function profile_registration_send_member_onboarding_email(\Drupal\user\UserInterface $user): void {
+  $config = \Drupal::config('profile_registration.settings');
+  if (!$config->get('member_onboarding_enabled')) {
+    return;
+  }
+  $email = $user->getEmail();
+  if (!$email) {
+    return;
+  }
+  \Drupal::service('plugin.manager.mail')->mail(
+    'profile_registration',
+    'member_onboarding',
+    $email,
+    $user->getPreferredLangcode(),
+    ['user' => $user],
+    NULL,
+    TRUE,
+  );
+}
+
+/**
+ * Implements hook_mail().
+ */
+function profile_registration_mail($key, &$message, $params) {
+  if ($key !== 'member_onboarding') {
+    return;
+  }
+  $config = \Drupal::config('profile_registration.settings');
+  $token = \Drupal::token();
+  $data = ['user' => $params['user']];
+  $options = ['clear' => TRUE];
+  $message['from'] = \Drupal::config('system.site')->get('mail');
+  $message['subject'] = $token->replace($config->get('member_onboarding_subject'), $data, $options);
+  $message['body'][] = $token->replace($config->get('member_onboarding_body'), $data, $options);
 }

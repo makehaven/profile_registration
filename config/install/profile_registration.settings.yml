@@ -1,0 +1,19 @@
+member_onboarding_enabled: true
+member_onboarding_subject: 'Welcome to MakeHaven — your member onboarding steps'
+member_onboarding_body: |
+  Hi [user:field_first_name],
+
+  Your MakeHaven account is active. Here is how to get from "signed up" to "making things":
+
+  1. Complete your member profile: [site:url]user/[user:uid]/main
+  2. Watch the safety orientation video: [site:url]video
+  3. Take the safety quiz (button at the bottom of the video page)
+  4. Book your in-person orientation and key pickup: [site:url]facilitator/schedules
+
+  Once orientation is done you'll have your access card and can use the space whenever you like.
+
+  Stuck on any step? Reply to this email or write info@makehaven.org.
+
+  The MakeHaven Team
+  770 Chapel St., New Haven, CT 06510
+  www.makehaven.org

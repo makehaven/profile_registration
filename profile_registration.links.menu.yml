@@ -1,0 +1,6 @@
+profile_registration.settings:
+  title: 'Profile Registration'
+  description: 'Configure the member onboarding email sent on ?profile=main registration.'
+  parent: system.admin_config_system
+  route_name: profile_registration.settings
+  weight: 90

@@ -1,0 +1,32 @@
+<?php
+
+/**
+ * @file
+ * Install and update hooks for Profile Registration.
+ */
+
+/**
+ * Seed default member onboarding email config keys if missing.
+ *
+ * Existing sites that pre-date the configurable onboarding email need the new
+ * keys populated; fresh installs already get them from
+ * config/install/profile_registration.settings.yml.
+ */
+function profile_registration_update_9001() {
+  $config = \Drupal::configFactory()->getEditable('profile_registration.settings');
+  $defaults = [
+    'member_onboarding_enabled' => TRUE,
+    'member_onboarding_subject' => 'Welcome to MakeHaven — your member onboarding steps',
+    'member_onboarding_body' => "Hi [user:field_first_name],\n\nYour MakeHaven account is active. Here is how to get from \"signed up\" to \"making things\":\n\n1. Complete your member profile: [site:url]user/[user:uid]/main\n2. Watch the safety orientation video: [site:url]video\n3. Take the safety quiz (button at the bottom of the video page)\n4. Book your in-person orientation and key pickup: [site:url]facilitator/schedules\n\nOnce orientation is done you'll have your access card and can use the space whenever you like.\n\nStuck on any step? Reply to this email or write info@makehaven.org.\n\nThe MakeHaven Team\n770 Chapel St., New Haven, CT 06510\nwww.makehaven.org\n",
+  ];
+  $changed = FALSE;
+  foreach ($defaults as $key => $value) {
+    if ($config->get($key) === NULL) {
+      $config->set($key, $value);
+      $changed = TRUE;
+    }
+  }
+  if ($changed) {
+    $config->save();
+  }
+}
