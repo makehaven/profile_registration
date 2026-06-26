@@ -42,9 +42,56 @@ function profile_registration_form_alter(array &$form, FormStateInterface $form_
  * Implements hook_form_FORM_ID_alter().
  */
 function profile_registration_form_user_register_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  if ($form_id !== 'user_register_form') {
+    return;
+  }
+
   // Add a custom submit handler to the user registration form.
-  if ($form_id == 'user_register_form') {
-    $form['actions']['submit']['#submit'][] = 'profile_registration_user_register_form_submit';
+  $form['actions']['submit']['#submit'][] = 'profile_registration_user_register_form_submit';
+
+  // Prefill the email field from the Chargebee hand-off URL so the joining
+  // member doesn't retype an address they already gave Chargebee. We accept the
+  // legacy Drupal-7 style ?edit[account][mail]= that the Chargebee redirect URL
+  // already uses (it does nothing on its own in Drupal 11), and a plain ?mail=.
+  $query = \Drupal::request()->query;
+  $mail = $query->all()['edit']['account']['mail'] ?? $query->get('mail');
+  if ($mail && empty($form['account']['mail']['#default_value'])) {
+    $form['account']['mail']['#default_value'] = $mail;
+  }
+}
+
+/**
+ * Copies identity + Chargebee context from the hand-off URL onto a new member.
+ *
+ * The Chargebee return URL carries first-name, last-name, chargebee-id (and
+ * plan_id) so the member never retypes what payment already collected. Storing
+ * chargebee-id is what lets the chargebee_status_sync webhook match the
+ * subscription_created event back to this user and grant the full member role —
+ * without it the webhook silently finds nobody.
+ *
+ * Fields are only written when present in the URL and currently empty, so this
+ * never clobbers a value the user typed or a later webhook owns.
+ */
+function _profile_registration_capture_member_identity(\Drupal\user\UserInterface $user, \Symfony\Component\HttpFoundation\ParameterBag $query): void {
+  // Map URL param (hyphen or underscore) => user field machine name.
+  $map = [
+    'field_first_name'        => ['first-name', 'first_name'],
+    'field_last_name'         => ['last-name', 'last_name'],
+    'field_user_chargebee_id' => ['chargebee-id', 'chargebee_id'],
+    'field_user_chargebee_plan' => ['plan_id'],
+  ];
+
+  foreach ($map as $field => $param_names) {
+    if (!$user->hasField($field) || !$user->get($field)->isEmpty()) {
+      continue;
+    }
+    foreach ($param_names as $param) {
+      $value = $query->get($param);
+      if ($value !== NULL && $value !== '') {
+        $user->set($field, $value);
+        break;
+      }
+    }
   }
 }
 
@@ -74,6 +121,10 @@ function profile_registration_user_register_form_submit($form, FormStateInterfac
   $user = $form_state->getFormObject()->getEntity();
 
   if ($profile_type === 'main') {
+    // Carry name + Chargebee id from the hand-off URL onto the user before the
+    // onboarding email sends, so "[user:field_first_name]" greets them by name
+    // and the webhook can later match their subscription.
+    _profile_registration_capture_member_identity($user, $query);
     $user->addRole('member_pending_approval');
     $user->save();
     profile_registration_send_member_onboarding_email($user);

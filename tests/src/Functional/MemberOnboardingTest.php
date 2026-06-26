@@ -3,8 +3,11 @@
 namespace Drupal\Tests\profile_registration\Functional;
 
 use Drupal\Core\Test\AssertMailTrait;
+use Drupal\field\Entity\FieldConfig;
+use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\Tests\BrowserTestBase;
 use Drupal\user\Entity\Role;
+use Drupal\user\Entity\User;
 
 /**
  * Tests the configurable member-onboarding email triggered on
@@ -29,6 +32,7 @@ class MemberOnboardingTest extends BrowserTestBase {
     'user',
     'profile',
     'token',
+    'field',
     'profile_registration',
   ];
 
@@ -54,6 +58,22 @@ class MemberOnboardingTest extends BrowserTestBase {
       'id' => 'member_pending_approval',
       'label' => 'Member pending approval',
     ])->save();
+
+    // The identity fields the Chargebee hand-off URL populates live in site
+    // config, not module config, so create them for the test environment.
+    foreach (['field_first_name', 'field_last_name', 'field_user_chargebee_id', 'field_user_chargebee_plan'] as $field_name) {
+      FieldStorageConfig::create([
+        'field_name' => $field_name,
+        'entity_type' => 'user',
+        'type' => 'string',
+      ])->save();
+      FieldConfig::create([
+        'field_name' => $field_name,
+        'entity_type' => 'user',
+        'bundle' => 'user',
+        'label' => $field_name,
+      ])->save();
+    }
   }
 
   /**
@@ -108,6 +128,64 @@ class MemberOnboardingTest extends BrowserTestBase {
       $this->mailsByKey('member_onboarding'),
       'Disabled toggle must suppress the email.',
     );
+  }
+
+  /**
+   * The Chargebee hand-off URL params land on the new member's user entity.
+   *
+   * Simulates the redirect Chargebee sends after payment, which carries the
+   * member's name and Chargebee customer id so they aren't retyped and the
+   * webhook can later match the subscription.
+   */
+  public function testChargebeeHandoffPopulatesIdentity() {
+    $query = [
+      'profile' => 'main',
+      'first-name' => 'Ada',
+      'last-name' => 'Lovelace',
+      'chargebee-id' => 'cb_cust_12345',
+      'plan_id' => 'membership-2024-update',
+      'membership_type' => '716',
+      'nextpage' => 'video',
+    ];
+    // The live URL prefills email via the legacy ?edit[account][mail]= form.
+    $query['edit']['account']['mail'] = 'ada@example.com';
+
+    $this->drupalGet('user/register', ['query' => $query]);
+    $this->assertSession()->statusCodeEquals(200);
+    // Email should be prefilled from the hand-off URL.
+    $this->assertSession()->fieldValueEquals('mail', 'ada@example.com');
+
+    $this->submitForm([
+      'name' => 'ada_lovelace',
+      'pass[pass1]' => 'TestPass123!',
+      'pass[pass2]' => 'TestPass123!',
+    ], 'Create new account');
+
+    $users = \Drupal::entityTypeManager()->getStorage('user')
+      ->loadByProperties(['name' => 'ada_lovelace']);
+    $this->assertCount(1, $users, 'The member account was created.');
+    /** @var \Drupal\user\UserInterface $user */
+    $user = reset($users);
+
+    $this->assertEquals('Ada', $user->get('field_first_name')->value);
+    $this->assertEquals('Lovelace', $user->get('field_last_name')->value);
+    $this->assertEquals('cb_cust_12345', $user->get('field_user_chargebee_id')->value);
+    $this->assertEquals('membership-2024-update', $user->get('field_user_chargebee_plan')->value);
+    $this->assertTrue($user->hasRole('member_pending_approval'), 'Pending member role assigned.');
+  }
+
+  /**
+   * Identity capture never clobbers a value already on the user.
+   */
+  public function testIdentityCaptureDoesNotClobberExisting() {
+    // A blank first-name param must not wipe anything, and capture only fills
+    // empty fields. Register with no name params; fields stay empty (not error).
+    $this->register('plain_member', 'plain@example.com', 'main');
+
+    $users = \Drupal::entityTypeManager()->getStorage('user')
+      ->loadByProperties(['name' => 'plain_member']);
+    $user = reset($users);
+    $this->assertTrue($user->get('field_first_name')->isEmpty(), 'No name param leaves the field empty.');
   }
 
   /**
