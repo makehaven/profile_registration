@@ -61,6 +61,38 @@ function profile_registration_form_user_register_form_alter(&$form, FormStateInt
 }
 
 /**
+ * Whether the current request is the paid-membership registration hand-off.
+ *
+ * Detected by the params the Chargebee return URL always carries. Used to
+ * strip escape hatches (log in / reset password tabs) that could pull a
+ * paying member out of the flow mid-signup (staff feedback 2026-07-14).
+ */
+function _profile_registration_is_membership_handoff(): bool {
+  $query = \Drupal::request()->query;
+  return $query->get('profile') !== NULL
+    || $query->get('chargebee-id') !== NULL
+    || isset($query->all()['edit']['account']['mail'])
+    || $query->get('mail') !== NULL;
+}
+
+/**
+ * Implements hook_menu_local_tasks_alter().
+ *
+ * Hides the Log in / Create new account / Reset your password tab pills on
+ * /user/register when the visitor arrived from the membership payment
+ * hand-off — the only correct action there is creating the account.
+ */
+function profile_registration_menu_local_tasks_alter(array &$data, string $route_name, \Drupal\Core\Cache\RefinableCacheableDependencyInterface &$cacheability): void {
+  if ($route_name !== 'user.register') {
+    return;
+  }
+  $cacheability->addCacheContexts(['url.query_args']);
+  if (_profile_registration_is_membership_handoff()) {
+    $data['tabs'] = [];
+  }
+}
+
+/**
  * Copies identity + Chargebee context from the hand-off URL onto a new member.
  *
  * The Chargebee return URL carries first-name, last-name, chargebee-id (and
