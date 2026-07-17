@@ -22,6 +22,18 @@ function profile_registration_form_alter(array &$form, FormStateInterface $form_
     return;
   }
 
+  // Prefill the phone the member already gave at registration (CiviCRM
+  // "SMS Consent" profile collects a mobile phone) so the profile form
+  // doesn't ask for a number they just typed (staff feedback 2026-07-16).
+  if (isset($form['field_preferred_phone']['widget'][0]['value'])
+    && empty($form['field_preferred_phone']['widget'][0]['value']['#default_value'])) {
+    $owner_uid = (int) ($entity->getOwnerId() ?: \Drupal::currentUser()->id());
+    $phone = _profile_registration_civicrm_phone($owner_uid);
+    if ($phone !== '') {
+      $form['field_preferred_phone']['widget'][0]['value']['#default_value'] = $phone;
+    }
+  }
+
   $tid = (int) \Drupal::request()->query->get('membership_type');
   if (!$tid) {
     return;
@@ -58,6 +70,77 @@ function profile_registration_form_user_register_form_alter(&$form, FormStateInt
   if ($mail && empty($form['account']['mail']['#default_value'])) {
     $form['account']['mail']['#default_value'] = $mail;
   }
+  // The hand-off email is the key chargebee_status_sync uses to match the
+  // subscription webhook to this account — lock it so a mid-signup edit
+  // can't orphan the payment. Stays editable when someone reaches
+  // /user/register without the hand-off params.
+  if ($mail) {
+    $form['account']['mail']['#attributes']['readonly'] = 'readonly';
+    $form['account']['mail']['#description'] = t('Using the email you provided at payment. Contact info@makehaven.org if it needs correcting.');
+  }
+
+  // Membership requires being 18+ (attested on the join form); enforce it
+  // against the birth date collected here (JR, 2026-07-17).
+  $form['#validate'][] = 'profile_registration_validate_adult_birth_date';
+}
+
+/**
+ * Validates the CiviCRM birth date on member registrations: must be 18+.
+ *
+ * The birth date is a CiviCRM UFGroup field (raw `birth_date` POST value,
+ * not a Drupal form element), so it is read from the request. Only member
+ * hand-offs (?profile=main) are age-gated — plain account signups (event
+ * attendees etc.) are not.
+ */
+function profile_registration_validate_adult_birth_date(array &$form, FormStateInterface $form_state): void {
+  if (\Drupal::request()->query->get('profile') !== 'main') {
+    return;
+  }
+  $raw = trim((string) \Drupal::request()->request->get('birth_date', ''));
+  if ($raw === '') {
+    // Presence is the CiviCRM profile's job (field is marked required there).
+    return;
+  }
+  $ts = strtotime($raw);
+  if ($ts === FALSE) {
+    return;
+  }
+  if ($ts > strtotime('-18 years')) {
+    $form_state->setErrorByName('birth_date', t('MakeHaven membership requires you to be at least 18 years old. If you believe this is an error, contact info@makehaven.org.'));
+  }
+}
+
+/**
+ * Best-effort lookup of a Drupal user's phone number in CiviCRM.
+ *
+ * Returns the primary (or first) phone on the matched contact, or '' —
+ * never throws, so the profile form can't be broken by CiviCRM being
+ * unavailable.
+ */
+function _profile_registration_civicrm_phone(int $uid): string {
+  if ($uid <= 0 || !\Drupal::moduleHandler()->moduleExists('civicrm')) {
+    return '';
+  }
+  try {
+    \Drupal::service('civicrm')->initialize();
+    $contact_id = \CRM_Core_BAO_UFMatch::getContactId($uid);
+    if (!$contact_id) {
+      return '';
+    }
+    $phones = \civicrm_api4('Phone', 'get', [
+      'where' => [['contact_id', '=', $contact_id]],
+      'orderBy' => ['is_primary' => 'DESC'],
+      'limit' => 1,
+      'checkPermissions' => FALSE,
+    ]);
+    foreach ($phones as $phone) {
+      return (string) ($phone['phone'] ?? '');
+    }
+  }
+  catch (\Throwable $e) {
+    // Prefill only — never block the form on CiviCRM.
+  }
+  return '';
 }
 
 /**
