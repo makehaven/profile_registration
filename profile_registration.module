@@ -294,6 +294,31 @@ function profile_registration_send_member_onboarding_email(\Drupal\user\UserInte
 }
 
 /**
+ * Implements hook_mail_alter().
+ *
+ * Suppresses Drupal core's generic "Your MakeHaven account is ready" email for
+ * members arriving through the membership payment hand-off. Those members get
+ * MakeHaven's own member-onboarding email (and the Slack invite) instead, so
+ * the generic core notice is redundant noise at the most decisive moment of the
+ * join funnel. Followers, event registrants, and instructor applicants do NOT
+ * carry the member hand-off params, so they keep the standard welcome — it is
+ * the only account email they receive and its copy already branches by purpose.
+ *
+ * Gated on member_onboarding_enabled so that disabling MakeHaven's email never
+ * leaves a member with no account email at all.
+ */
+function profile_registration_mail_alter(&$message) {
+  if (($message['id'] ?? '') !== 'user_register_no_approval_required') {
+    return;
+  }
+  $query = \Drupal::request()->query;
+  $is_member_path = $query->get('profile') === 'main' || $query->get('chargebee-id') !== NULL;
+  if ($is_member_path && \Drupal::config('profile_registration.settings')->get('member_onboarding_enabled')) {
+    $message['send'] = FALSE;
+  }
+}
+
+/**
  * Implements hook_mail().
  */
 function profile_registration_mail($key, &$message, $params) {
