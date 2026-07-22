@@ -61,6 +61,19 @@ function profile_registration_form_user_register_form_alter(&$form, FormStateInt
   // Add a custom submit handler to the user registration form.
   $form['actions']['submit']['#submit'][] = 'profile_registration_user_register_form_submit';
 
+  // Registration UX enhancements (double-submit guard, phone format hint,
+  // birth-date picker defaults). Kept in code so it survives config imports.
+  $form['#attached']['library'][] = 'profile_registration/register_enhancements';
+
+  // "Hide AI assistants" is an account *preference* that belongs on the profile
+  // edit screen, not the join form — it was leaking onto registration because
+  // the user entity has no dedicated 'register' form-mode display, so the
+  // default display (which includes the Preferences group) is used verbatim.
+  // Hide it here; field_group drops the now-empty Preferences fieldset.
+  if (isset($form['field_hide_ai_chatbots'])) {
+    $form['field_hide_ai_chatbots']['#access'] = FALSE;
+  }
+
   // Prefill the email field from the Chargebee hand-off URL so the joining
   // member doesn't retype an address they already gave Chargebee. We accept the
   // legacy Drupal-7 style ?edit[account][mail]= that the Chargebee redirect URL

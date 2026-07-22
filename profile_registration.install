@@ -30,3 +30,78 @@ function profile_registration_update_9001() {
     $config->save();
   }
 }
+
+/**
+ * Add write-in format + 18+ help text to the registration birth-date field.
+ *
+ * The birth date is a CiviCRM profile (Member_Demographics) field; setting its
+ * help here — rather than via the CiviCRM UI — keeps the copy in code so it is
+ * reapplied on deploy and survives database refreshes. Resolved by profile
+ * machine name so it is portable across environments.
+ */
+function profile_registration_update_9002(): string {
+  if (!\Drupal::moduleHandler()->moduleExists('civicrm')) {
+    return 'CiviCRM not enabled; skipped birth-date help text.';
+  }
+  \Drupal::service('civicrm')->initialize();
+  $groups = \civicrm_api4('UFGroup', 'get', [
+    'select' => ['id'],
+    'where' => [['name', '=', 'Member_Demographics']],
+    'checkPermissions' => FALSE,
+  ]);
+  $group_id = $groups[0]['id'] ?? NULL;
+  if (!$group_id) {
+    return 'Member_Demographics profile not found; skipped.';
+  }
+  \civicrm_api4('UFField', 'update', [
+    'where' => [
+      ['uf_group_id', '=', $group_id],
+      ['field_name', '=', 'birth_date'],
+    ],
+    'values' => ['help_post' => 'Enter as MM/DD/YYYY. You must be 18 or older to join.'],
+    'checkPermissions' => FALSE,
+  ]);
+  return 'Set birth_date help text on Member_Demographics profile.';
+}
+
+/**
+ * Open the "Membership Agreement" link on the join-form waiver in a new tab.
+ *
+ * The Legal module's registration checkbox (legal_conditions "extras-3") links
+ * to /membership-agreement mid-sentence with no target, so clicking it drops a
+ * joining member out of the form. Rewrite that anchor to open in a new tab and
+ * drop the stray curly quotes. Idempotent and applied in code so it reaches
+ * live and survives database refreshes (a manual CiviCRM/Legal UI edit here is
+ * exactly the kind that "didn't stick" before).
+ */
+function profile_registration_update_9003(): string {
+  $schema = \Drupal::database()->schema();
+  if (!$schema->tableExists('legal_conditions')) {
+    return 'Legal module not present; skipped.';
+  }
+  $db = \Drupal::database();
+  $row = $db->query('SELECT tc_id, extras FROM {legal_conditions} ORDER BY version DESC LIMIT 1')->fetchObject();
+  if (!$row || empty($row->extras)) {
+    return 'No legal conditions found; skipped.';
+  }
+  $extras = @unserialize($row->extras);
+  if (!is_array($extras)) {
+    return 'Could not read legal extras; skipped.';
+  }
+  $target = 'Before joining as a Member I will have carefully read and understood all of the provisions in this document and those outlined in the <a href="/membership-agreement" target="_blank" rel="noopener">Membership Information, Agreement and Guidelines</a>, and abide by that agreement as a condition of membership in MakeHaven, Inc.';
+  foreach ($extras as $key => $value) {
+    // Match the member-agreement checkbox regardless of prior wording tweaks.
+    if (is_string($value) && stripos($value, 'joining as a Member') !== FALSE && stripos($value, '/membership-agreement') !== FALSE) {
+      if ($value === $target) {
+        return 'Membership-agreement link already opens in a new tab; no change.';
+      }
+      $extras[$key] = $target;
+      $db->update('legal_conditions')
+        ->fields(['extras' => serialize($extras)])
+        ->condition('tc_id', $row->tc_id)
+        ->execute();
+      return 'Rewrote membership-agreement link to open in a new tab.';
+    }
+  }
+  return 'Membership-agreement checkbox not found; skipped.';
+}

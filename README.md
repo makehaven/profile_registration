@@ -1,5 +1,11 @@
 # Profile Registration Redirect Module
 
+> **Working on the `/user/register` join form?** Read
+> [`REGISTRATION_FLOW.md`](REGISTRATION_FLOW.md) first — it maps every piece of
+> that Drupal+CiviCRM+Legal hybrid (which CSS actually renders, where each field
+> lives, the update hooks that own CiviCRM/Legal content, and the gotchas). This
+> module does more than the redirect described below.
+
 ## Overview
 
 The **Profile Registration Redirect** module is a custom Drupal module designed to handle user redirection immediately after account creation. When a user registers an account with a specific profile type, they are automatically redirected to the appropriate profile editing page. Additionally, if the profile type is `main`, the user is assigned the role `member_pending_approval`.
