@@ -75,11 +75,15 @@ function profile_registration_form_user_register_form_alter(&$form, FormStateInt
   }
 
   // Prefill the email field from the Chargebee hand-off URL so the joining
-  // member doesn't retype an address they already gave Chargebee. We accept the
-  // legacy Drupal-7 style ?edit[account][mail]= that the Chargebee redirect URL
-  // already uses (it does nothing on its own in Drupal 11), and a plain ?mail=.
+  // member doesn't retype an address they already gave Chargebee. Three spellings
+  // are accepted because three are in circulation: the legacy Drupal-7 style
+  // ?edit[account][mail]= that the Chargebee redirect URL already uses (it does
+  // nothing on its own in Drupal 11), a plain ?mail=, and ?email= — which is
+  // what /membership-initiate actually forwards, and the reason this prefill
+  // silently did nothing on live until 2026-08-28. Keep all three: hand-off
+  // links live in members' inboxes for weeks, so narrowing this re-breaks them.
   $query = \Drupal::request()->query;
-  $mail = $query->all()['edit']['account']['mail'] ?? $query->get('mail');
+  $mail = $query->all()['edit']['account']['mail'] ?? $query->get('mail') ?? $query->get('email');
   if ($mail && empty($form['account']['mail']['#default_value'])) {
     $form['account']['mail']['#default_value'] = $mail;
   }
@@ -168,7 +172,8 @@ function _profile_registration_is_membership_handoff(): bool {
   return $query->get('profile') !== NULL
     || $query->get('chargebee-id') !== NULL
     || isset($query->all()['edit']['account']['mail'])
-    || $query->get('mail') !== NULL;
+    || $query->get('mail') !== NULL
+    || $query->get('email') !== NULL;
 }
 
 /**
