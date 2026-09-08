@@ -271,17 +271,59 @@ function profile_registration_user_register_form_submit($form, FormStateInterfac
     \Drupal::messenger()->addStatus(t('Please continue by completing your member profile.'));
   }
   elseif ($profile_type === 'instructor') {
-    // Send fresh signups straight to the agreement webform, then back to the
-    // become-instructor status page after submission. Skips the marketing
-    // middle step they were on the same flow as already.
-    $query_params['destination'] = '/become-instructor';
-    $redirect_url = Url::fromUri('internal:/form/webform-5220', ['query' => $query_params]);
+    // Hand the applicant to /become-instructor, which decides what a person in
+    // their position does next (a member proposes a session; a non-member is
+    // pointed at the interest form and a conversation with education staff).
+    //
+    // This used to redirect to '/form/webform-5220?...&destination=/become-instructor'
+    // — the master instructor agreement — and both halves of that were wrong:
+    //  - The agreement is no longer the first step. Putting a legal agreement
+    //    in front of someone before they have spoken to anyone is the specific
+    //    thing the 2026-08-13 rollback removed from every other entry point;
+    //    this one was missed. See
+    //    docs/ops/2026-08-13-instructor-pages-rollback.md.
+    //  - The path itself died on 2026-08-14 when the agreement's alias moved to
+    //    /instructor/agreement, and the redirect entity left behind could not
+    //    save it: the redirect module deliberately does nothing on a request
+    //    carrying ?destination= (RedirectChecker::canRedirect()). So from
+    //    2026-08-14 to 2026-09-08 every instructor signup ended on "Page not
+    //    found" — account created, applicant stranded.
+    //
+    // Resolved through the path validator rather than a hardcoded Url so a
+    // missing instructor_companion (this module does not depend on it — the
+    // dependency runs the other way) degrades to the account page instead of
+    // throwing during registration.
+    $redirect_url = _profile_registration_route_or_null('/become-instructor', $query_params)
+      ?: Url::fromUserInput('/user/' . $user->id(), ['query' => $query_params]);
   }
   else {
     $redirect_url = Url::fromUserInput('/user/' . $user->id(), ['query' => $query_params]);
   }
 
   $form_state->setRedirectUrl($redirect_url);
+}
+
+/**
+ * Returns a Url for an internal path, or NULL when nothing routes it.
+ *
+ * Registration hand-offs point at pages owned by other modules, so a path that
+ * has been renamed or a module that is switched off must not be able to break
+ * account creation. Callers supply their own fallback.
+ *
+ * @param string $path
+ *   Internal path, with leading slash.
+ * @param array $query
+ *   Query parameters to carry over.
+ *
+ * @return \Drupal\Core\Url|null
+ *   The Url, or NULL when the path is not routed.
+ */
+function _profile_registration_route_or_null(string $path, array $query = []) {
+  $url = \Drupal::service('path.validator')->getUrlIfValidWithoutAccessCheck($path);
+  if (!$url) {
+    return NULL;
+  }
+  return $url->setOption('query', $query);
 }
 
 /**
