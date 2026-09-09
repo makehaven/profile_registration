@@ -22,7 +22,6 @@ class InstructorSignupLandingTest extends BrowserTestBase {
    */
   protected static $modules = [
     'user',
-    'node',
     'path_alias',
     'profile',
     'token',
@@ -45,17 +44,12 @@ class InstructorSignupLandingTest extends BrowserTestBase {
       ->set('verify_mail', FALSE)
       ->save();
 
-    user_role_grant_permissions('authenticated', ['access content']);
   }
 
   /**
    * A new applicant lands on /become-instructor, not on a dead path.
    */
   public function testInstructorSignupLandsOnBecomeInstructor() {
-    // instructor_companion owns /become-instructor and is too heavy a
-    // dependency to install here (it pulls in the whole dashboard), so stand
-    // the path up as an aliased node. What is under test is that the handler
-    // sends people to a path that resolves — not what renders there.
     $this->createBecomeInstructorPath();
 
     $this->registerInstructor('landing_applicant', 'landing_applicant@example.com');
@@ -89,13 +83,15 @@ class InstructorSignupLandingTest extends BrowserTestBase {
 
   /**
    * Stands up a routable /become-instructor for the test environment.
+   *
+   * instructor_companion owns the real route and is far too heavy to install
+   * here (it pulls in the whole dashboard), so the path is aliased onto a core
+   * route instead. What is under test is that the handler sends people to a
+   * path the router resolves — not what renders there.
    */
   protected function createBecomeInstructorPath(): void {
-    $this->drupalCreateContentType(['type' => 'page', 'name' => 'Basic page']);
-    $node = $this->drupalCreateNode(['type' => 'page', 'title' => 'Become a MakeHaven Instructor']);
-
     \Drupal::entityTypeManager()->getStorage('path_alias')->create([
-      'path' => '/node/' . $node->id(),
+      'path' => '/user/password',
       'alias' => '/become-instructor',
       'langcode' => 'en',
     ])->save();
