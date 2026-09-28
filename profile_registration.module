@@ -1,6 +1,10 @@
 <?php
 
+use Drupal\block\Entity\Block;
+use Drupal\Core\Access\AccessResult;
+use Drupal\Core\Access\AccessResultInterface;
 use Drupal\Core\Entity\ContentEntityFormInterface;
+use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Url;
 use Drupal\profile\Entity\ProfileInterface;
@@ -99,6 +103,73 @@ function profile_registration_form_user_register_form_alter(&$form, FormStateInt
   // Membership requires being 18+ (attested on the join form); enforce it
   // against the birth date collected here (JR, 2026-07-17).
   $form['#validate'][] = 'profile_registration_validate_adult_birth_date';
+
+  // On the paid hand-off, say what this page is for, and give the one way
+  // out that does not lose the payment. People did wander: of 46 who came
+  // back from checkout in the month to 2026-09-28, six left without an
+  // account, one via the main menu and one via "Continue with Google".
+  if (_profile_registration_is_paid_handoff()) {
+    $form['mh_paid_intro'] = [
+      '#type' => 'html_tag',
+      '#tag' => 'p',
+      '#value' => t('Your payment went through. Create your MakeHaven login below to finish joining.'),
+      '#attributes' => ['class' => ['mh-paid-handoff__intro']],
+      '#weight' => -100,
+    ];
+    $form['mh_paid_help'] = [
+      '#type' => 'html_tag',
+      '#tag' => 'p',
+      '#value' => t('Already have a MakeHaven account under a different email? Email <a href="mailto:membership@makehaven.org">membership@makehaven.org</a> and we will connect your payment to it.'),
+      '#attributes' => ['class' => ['mh-paid-handoff__help']],
+      '#weight' => 1000,
+    ];
+    $form['#cache']['contexts'][] = 'url.query_args';
+  }
+}
+
+/**
+ * Whether this request is the paid-membership return from Chargebee.
+ *
+ * Stricter than _profile_registration_is_membership_handoff(): only a
+ * customer ID or ?profile=main count, so an instructor applicant or a
+ * program follower arriving with ?mail= keeps the full page.
+ */
+function _profile_registration_is_paid_handoff(): bool {
+  $query = \Drupal::request()->query;
+  return $query->get('chargebee-id') !== NULL
+    || $query->get('chargebee_id') !== NULL
+    || $query->get('profile') === 'main';
+}
+
+/**
+ * Implements hook_block_access().
+ *
+ * Turns the paid-membership return page into a focused page: no main menu,
+ * account menu, search or breadcrumbs, and no "Continue with Google". Google
+ * sign-in here is login-only (social_auth user_allowed: login), so for a new
+ * member it cannot create the account, and it would skip the waiver, age
+ * check and profile fields if it could. On 2026-09-24 a member who had just
+ * paid clicked it, was bounced to the homepage three times, and ended up
+ * creating an account with no payment attached. The logo and footer contact
+ * details stay, so nobody is trapped.
+ */
+function profile_registration_block_access(Block $block, string $operation, AccountInterface $account): AccessResultInterface {
+  if ($operation !== 'view' || \Drupal::routeMatch()->getRouteName() !== 'user.register') {
+    return AccessResult::neutral()->addCacheContexts(['route']);
+  }
+  $hidden = [
+    'social_auth_login',
+    'menu_block:main',
+    'system_menu_block:main',
+    'system_menu_block:account',
+    'views_exposed_filter_block:site_search-page_1',
+    'search_form_block',
+    'system_breadcrumb_block',
+  ];
+  $result = in_array($block->getPluginId(), $hidden, TRUE) && _profile_registration_is_paid_handoff()
+    ? AccessResult::forbidden('Focused paid-membership sign-up page.')
+    : AccessResult::neutral();
+  return $result->addCacheContexts(['route', 'url.query_args']);
 }
 
 /**
