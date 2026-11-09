@@ -119,7 +119,7 @@ function profile_registration_form_user_register_form_alter(&$form, FormStateInt
     $form['mh_paid_help'] = [
       '#type' => 'html_tag',
       '#tag' => 'p',
-      '#value' => t('Already have a MakeHaven account under a different email? Email <a href="mailto:membership@makehaven.org">membership@makehaven.org</a> and we will connect your payment to it.'),
+      '#value' => t('Already have a MakeHaven account under a different email? Email <a href="mailto:member-care@makehaven.org">member-care@makehaven.org</a> and we will connect your payment to it.'),
       '#attributes' => ['class' => ['mh-paid-handoff__help']],
       '#weight' => 1000,
     ];
